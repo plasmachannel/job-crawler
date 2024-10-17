@@ -1,0 +1,40 @@
+# Node.js dependencies
+node_modules/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+
+# Output directories
+dist/
+build/
+
+# Puppeteer browser downloads
+puppeteer/
+.puppeteer/
+
+# WebStorm IDE project files
+.idea/
+*.iml
+
+# Optional npm cache directory
+.npm/
+
+# Debug and local environment files
+.vscode/
+*.local
+*.env.local
+*.log
+
+# OS generated files/macOS specific
+.DS_Store
+Thumbs.db
+
+# Lock files (depending on package manager)
+package-lock.json
+yarn.lock
+

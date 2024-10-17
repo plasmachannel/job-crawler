@@ -1,0 +1,46 @@
+{
+
+  "name": "job-scraper",
+
+  "version": "1.0.0",
+
+  "main": "jobProfileUploaderHandler.js",
+
+  "scripts": {},
+
+  "keywords": [],
+
+  "author": "Thomas Marlette",
+
+  "license": "ISC",
+
+  "type": "module",
+
+  "devDependencies": {
+
+    "@aws-sdk/client-sqs": "^3.654.0",
+
+    "@sparticuz/chromium": "^127.0.0",
+
+    "aws-sdk": "^2.1678.0"
+
+  },
+
+  "dependencies": {
+
+    "@opensearch-project/opensearch": "^3.0.0-beta.5",
+
+    "puppeteer": "^23.1.0",
+
+    "puppeteer-core": "^23.1.0",
+
+    "puppeteer-extra": "^3.3.6",
+
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+
+  },
+
+  "description": ""
+
+}
+
