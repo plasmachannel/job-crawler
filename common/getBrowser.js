@@ -14,13 +14,9 @@ export default async function getBrowser() {
             headless: chromium.headless,
         });
     }
-    if (process.env.NODE_ENV === 'local') {
-        return await puppeteer.launch({
-            headless: false,
-        })
-    }
+
     return puppeteer.launch({
-        headless: true,
+        headless: false,
         defaultViewport: null,
         args: ['--no-sandbox'],
     });

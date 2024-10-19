@@ -32,7 +32,7 @@ export default async function companyCrawler (page, sendInQueue = true) {
 
     // Extract only fully formed URLs on the page
     let currentPage = 0;
-    const pageLimit = 2;
+    const pageLimit = 100000;
     while (1 && currentPage < pageLimit) {
         currentPage++;
         const companyLinks = await getCompanyLinksOnPage(page);

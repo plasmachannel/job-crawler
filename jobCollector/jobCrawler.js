@@ -1,5 +1,6 @@
 import {sendAllToJobQueue} from "../common/queue.js";
 import {clickToNextPage} from "../common/pagination.js";
+import logger from "../common/logger.js";
 
 
 const baseUrl = 'https://www.builtinnyc.com';
@@ -29,9 +30,17 @@ async function getAllJobsUrl(page) {
     });
 }
 
+async function doesNotHaveJobs(page) {
+    return await page.evaluate(() => {
+        var headerElements = Array.from(document.querySelectorAll('h2'))
+        const noJobTextElements = headerElements.filter(e => e.innerText.includes('No jobs to discover at this time'));
+        return noJobTextElements.length > 0;
+    });
+}
+
 async function goToViewAllJobsPage(page) {
     const viewAllJobsUrl = await getAllJobsUrl(page);
-    console.log({viewAllJobsUrl});
+    logger.info({viewAllJobsUrl});
     if (!viewAllJobsUrl) {
         return false;
     }
@@ -41,44 +50,54 @@ async function goToViewAllJobsPage(page) {
 }
 
 export default async function jobCrawler(page, jobUrl, sendInQueue = true)  {
-    // Navigate to the company's jobs page
     const companyJobPage = `${jobUrl}/jobs`;
-    await page.goto(companyJobPage, {waitUntil: 'networkidle2'});
+    await page.goto(companyJobPage, {waitUntil: 'networkidle0'});
 
-    const didVisitPage = await goToViewAllJobsPage(page);
-    if (!didVisitPage) {
-        console.log('couldnt find view all page');
-        return;
+    const areNoJobs = await doesNotHaveJobs(page);
+    if (areNoJobs) {
+        logger.info(`${jobUrl} does not have job listings at this time`)
+        return true;
     }
 
-    let allJobLinks = [];
-    let currentPage = 0;
-    while (1) {
-        currentPage++;
-        const jobLinks = await getJobLinksOnCurrentPage(page);
-        console.log('found some job links:', jobLinks);
-        allJobLinks = allJobLinks.concat(jobLinks);
-        try {
-            // Check if the "Next Page" button exists
-            const didGoToNextPage = await clickToNextPage(page);
-            if (!didGoToNextPage) {
+    try {
+        const didVisitPage = await goToViewAllJobsPage(page);
+        if (!didVisitPage) {
+            logger.warn('couldnt find view all page', jobUrl);
+            return false;
+        }
+
+        let allJobLinks = [];
+        let currentPage = 0;
+        while (1) {
+            currentPage++;
+            const jobLinks = await getJobLinksOnCurrentPage(page);
+            logger.verbose('found some job links:', jobLinks);
+            allJobLinks = allJobLinks.concat(jobLinks);
+            try {
+                // Check if the "Next Page" button exists
+                const didGoToNextPage = await clickToNextPage(page);
+                if (!didGoToNextPage) {
+                    break;
+                }
+            } catch (error) {
+                logger.error(error);
                 break;
             }
-        } catch (error) {
-            console.error(error);
-            break;
         }
-    }
-    // Extract job links from the search results
+        // Extract job links from the search results
 
-    // Log the found links
-    console.log('Links found:');
-    allJobLinks.forEach((link, index) => {
-        console.log(`${index + 1}. ${link}`);
-    });
+        // Log the found links
+        logger.info('Links found:');
+        allJobLinks.forEach((link, index) => {
+            console.log(`${index + 1}. ${link}`);
+        });
 
-    if (sendInQueue) {
-        await sendAllToJobQueue(allJobLinks);
+        if (sendInQueue) {
+            await sendAllToJobQueue(allJobLinks);
+        }
+        return true;
+    } catch (err) {
+        logger.error(`Something went wrong when trying to access company page ${jobUrl}: ${error}`);
+        return false;
     }
-    return true;
 };

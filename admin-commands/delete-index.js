@@ -15,6 +15,7 @@ async function deleteIndex(indexName = 'jd-index') {
         });
 
         console.log(`Index ${indexName} deleted successfully`, response);
+        await client.indices.create({index: indexName});
     } catch (error) {
         if (error.meta && error.meta.body && error.meta.body.error) {
             console.error(`Failed to delete index: ${error.meta.body.error.reason}`);

@@ -18,7 +18,7 @@ export async function getMessagesFromJobQueue() {
         QueueUrl: process.env.JOB_PROCESSING_QUEUE,
         MaxNumberOfMessages: 10,  // Maximum number of messages (10 is the limit for a single receive request)
         VisibilityTimeout: 180,    // Time to process the message before it becomes visible again
-        WaitTimeSeconds: 10      // Enable long polling for up to 10 seconds
+        WaitTimeSeconds: 2      // Enable long polling for up to 10 seconds
     };
     return getMessagesFromQueue(params);
 }
@@ -27,7 +27,7 @@ export async function getMessagesFromCompanyQueue() {
         QueueUrl: process.env.COMPANY_PROCESSING_QUEUE,
         MaxNumberOfMessages: 10,
         VisibilityTimeout: 180,
-        WaitTimeSeconds: 10
+        WaitTimeSeconds: 2
     }
     return getMessagesFromQueue(params);
 }
@@ -108,9 +108,9 @@ async function batchSendMessagesToSQS(urls, queueUrl) {
             // Use SendMessageBatchCommand to send the batch
             const command = new SendMessageBatchCommand(params);
             const result = await sqsClient.send(command);
-            console.log('Successfully sent batch:', result);
+            logger.verbose('Successfully sent batch:', result);
         } catch (error) {
-            console.error('Error sending batch:', error);
+            logger.warn('Error sending batch:', error);
         }
     }
 }
