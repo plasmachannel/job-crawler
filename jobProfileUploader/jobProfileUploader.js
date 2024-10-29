@@ -1,9 +1,15 @@
-import searchClient from "../common/searchClient.js";
+// import searchClient from "../common/searchClient.js";
 import logger from "../common/logger.js";
+
+import {generateEmbedding} from "../common/embeddings.js";
+import {getFilepathEnd} from "../common/urls.js";
+import {markJobReqAsSeen} from "../common/s3.js";
+import dotenv from "dotenv";
 
 const baseUrl = 'https://www.builtinnyc.com';
 
-const client = searchClient;
+dotenv.config();
+// const client = searchClient;
 
 function getSalaryLimit(salaryText) {
     return salaryText.trim().split('-');
@@ -37,26 +43,21 @@ async function getMetadataFields(page) {
     });
 }
 
-function getJobId(url) {
-    console.log({url});
-    const parsedUrl = new URL(url);
-    const pathSegments = parsedUrl.pathname.split('/');
-    return pathSegments[pathSegments.length - 1];
-}
-
 async function getJobDescriptionText(page) {
     return await page.evaluate(() => {
-        const jobDescriptionDiv = document.querySelector('.container.py-lg');
+        const roleDescriptionSelector = '.bg-white.rounded-3.p-md.mb-sm.overflow-hidden.position-relative.small-size';
+        const jobDescriptionDiv = document.querySelector(roleDescriptionSelector);
         if (jobDescriptionDiv) {
-            return Array.from(jobDescriptionDiv.querySelectorAll('p, ul, li'))
-                .map(element => element.innerText.trim())
-                .join(' ');
+            const nodes = Array.from(jobDescriptionDiv.querySelectorAll('p, ul, li'));
+            return Array.prototype.reduce.call(nodes, function(html, node) {
+                return html + ( node.outerHTML || node.nodeValue );
+            }, "");
         }
         return '';
     });
 }
 
-async function jobUploader(page, url) {
+async function jobUploader(page, url, companyId) {
     const fullUrl = `${baseUrl}${url}`;
     logger.debug(`navigating to ${fullUrl}`);
     await page.goto(`${fullUrl}`, { waitUntil: 'networkidle2' });
@@ -66,7 +67,7 @@ async function jobUploader(page, url) {
         logger.verbose({metadataFields});
 
         const jobDescriptionText = await getJobDescriptionText(page);
-
+        const embeddedText = await generateEmbedding(jobDescriptionText);
         const {salaryText, companyName, roleName, location, officeType, yearsOfExperience} = metadataFields;
         const salaryRange = getSalaryLimit(salaryText);
 
@@ -81,28 +82,36 @@ async function jobUploader(page, url) {
             jobDescription: jobDescriptionText,
         });
 
-        const jobId = getJobId(fullUrl);
+        const jobId = getFilepathEnd(fullUrl);
+        let jobReqId = `${companyId}-${jobId}`;
+        const jobReqBody = {
+            companyName,
+            roleName,
+            location,
+            officeType,
+            yearsOfExperience,
+            minSalary: salaryRange[0],
+            maxSalary: salaryRange[1],
+            jobDescription: jobDescriptionText,
+            descriptionEmbedding: embeddedText,
+            createdAt: Date.now(),
+            url: fullUrl,
+        }
+        await markJobReqAsSeen(jobReqId, jobReqBody);
+
+        /*
         const response = await client.index({
             index: "jd-index",
-            id: `${companyName}-${jobId}`,
-            body: {
-                companyName,
-                roleName,
-                location,
-                officeType,
-                yearsOfExperience,
-                minSalary: salaryRange[0],
-                maxSalary: salaryRange[1],
-                jobDescription: jobDescriptionText,
-                createdAt: Date.now(),
-            },
+            id: jobReqId,
+            body: jobReqBody,
         });
-
         logger.verbose({response});
+
+         */
         logger.info(`Job ID created ${companyName}-${jobId}`);
         return true;
     } catch (error) {
-        logger.error(`Something went wrong when trying to access job listing metadata at ${url}: ${error}`);
+        logger.error(`Something went wrong when trying to access job listing metadata at ${fullUrl}: ${error}`);
         return false;
     }
 }

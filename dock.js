@@ -5,14 +5,17 @@ import { Command } from 'commander';
 // Promisify exec to use async/await
 const execPromise = util.promisify(exec);
 
+
 // Map of Docker images and their custom Dockerfiles
+const imageRepository = '015584085679.dkr.ecr.us-east-2.amazonaws.com';
+
 const dockerImages = {
     'job-collector': {
-        imageName: '015584085679.dkr.ecr.us-east-2.amazonaws.com/job-collector',
+        imageName: 'job-collector',
         dockerfile: 'Dockerfile.jobCollector'
     },
     'profile-uploader': {
-        imageName: '015584085679.dkr.ecr.us-east-2.amazonaws.com/profile-uploader',
+        imageName: 'profile-uploader',
         dockerfile: 'Dockerfile.profileUploader'
     },
     // Add more images here as needed
@@ -54,16 +57,19 @@ const handleDockerCommand = async (action, imageKey, options) => {
     switch (action) {
         case 'push':
             console.log(`Pushing image: ${imageName}`);
-            await runCommand(`docker push ${imageName}`);
+            console.log(`docker push ${imageName}`)
+            await runCommand(`docker push   ${imageRepository}/${imageName}:latest`);
             break;
         case 'pull':
             console.log(`Pulling image: ${imageName}`);
-            await runCommand(`docker pull ${imageName}`);
+            await runCommand(`docker pull ${imageRepository}/${imageName}:latest`);
             break;
         case 'build':
             const buildPath = options.path || '.';
             console.log(`Building image: ${imageName} using Dockerfile: ${dockerfile} at path: ${buildPath}`);
+            console.log('Running command:', `docker build --platform linux/amd64 -t ${imageName} -f ${dockerfile} ${buildPath}`)
             await runCommand(`docker build --platform linux/amd64 -t ${imageName} -f ${dockerfile} ${buildPath}`);
+            await runCommand(`docker tag ${imageName}:latest ${imageRepository}/${imageName}:latest`);
             break;
         default:
             console.error(`Unknown action: ${action}. Use "push", "pull", or "build".`);
@@ -75,7 +81,7 @@ const handleDockerCommand = async (action, imageKey, options) => {
 const program = new Command();
 
 program
-    .name('admin-tool')
+    .name('dock')
     .description('CLI tool to manage Docker images (push, pull, build) for your projects.')
     .version('1.0.0');
 

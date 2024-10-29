@@ -1,16 +1,28 @@
 import {
-    SendMessageCommand,
     SQSClient,
     SendMessageBatchCommand,
     ReceiveMessageCommand,
-    DeleteMessageCommand
+    DeleteMessageCommand,
+    SendMessageCommand
 } from "@aws-sdk/client-sqs";
 import logger from "./logger.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 const sqsClient = new SQSClient({ region: process.env.REGION });
 
 export async function sendAllToCompanyQueue(urls) {
     await batchSendMessagesToSQS(urls, process.env.COMPANY_PROCESSING_QUEUE);
+}
+
+export async function getFailureEvents() {
+    const params = {
+        QueueUrl: process.env.FAILURE_EVENT_QUEUE,
+        MaxNumberOfMessages: 2,
+        VisibilityTimeout: 10,
+        WaitTimeSeconds: 20,
+    }
+    return getMessagesFromQueue(params);
 }
 
 export async function getMessagesFromJobQueue() {
@@ -31,6 +43,7 @@ export async function getMessagesFromCompanyQueue() {
     }
     return getMessagesFromQueue(params);
 }
+
 async function getMessagesFromQueue(params) {
     try {
         // Receive multiple messages from the queue
@@ -52,6 +65,43 @@ export async function sendAllToJobQueue(urls) {
     await batchSendMessagesToSQS(urls, process.env.JOB_PROCESSING_QUEUE);
 }
 
+export async function sendFailureEvent(instanceId, instanceType, eventType) {
+    const queueUrl = process.env.FAILURE_EVENT_QUEUE;
+
+    const messageBody = JSON.stringify({
+        instanceId,
+        eventType,
+        instanceType,
+        timestamp: new Date().toISOString()
+    });
+
+    // Set up parameters for the SQS message
+    const params = {
+        QueueUrl: queueUrl,
+        MessageBody: messageBody,
+        MessageAttributes: {
+            "InstanceId": {
+                DataType: "String",
+                StringValue: instanceId
+            },
+            "EventType": {
+                DataType: "String",
+                StringValue: eventType
+            },
+            "InstanceType": {
+                DataType: "String",
+                StringValue: instanceType
+            }
+        }
+    };
+
+    try {
+        const data = await sqsClient.send(new SendMessageCommand(params));
+        console.log("Failure event sent successfully:", data.MessageId);
+    } catch (error) {
+        console.error("Error sending failure event:", error);
+    }
+}
 
 async function deleteMessageFromQueue(deleteParams) {
     try {
@@ -60,6 +110,14 @@ async function deleteMessageFromQueue(deleteParams) {
     } catch (err) {
         logger.warn("Error deleting message:", err);
     }
+}
+
+export default async function  deleteFailureEvent(receiptHandle) {
+    const deleteParams = {
+        QueueUrl: process.env.FAILURE_EVENT_QUEUE,
+        ReceiptHandle: receiptHandle
+    };
+    await deleteMessageFromQueue(deleteParams);
 }
 
 export async function deleteMessageFromCompanyQueue(receiptHandle) {
@@ -94,7 +152,7 @@ async function batchSendMessagesToSQS(urls, queueUrl) {
         const entries = batch.map((url, index) => ({
             Id: index.toString(), // Unique ID within the batch
             MessageBody: JSON.stringify({
-                url,
+                ...url,
                 timestamp
             })
         }));

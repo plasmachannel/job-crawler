@@ -1,89 +1,15 @@
-import { EC2Client, RunInstancesCommand, TerminateInstancesCommand, DescribeInstancesCommand, CreateTagsCommand, waitUntilInstanceStatusOk } from "@aws-sdk/client-ec2";
-import { exec } from 'child_process';
+import {DescribeInstancesCommand, EC2Client, TerminateInstancesCommand} from "@aws-sdk/client-ec2";
+import {exec} from 'child_process';
 import util from 'util';
-import { Command } from 'commander';
+import {Command} from 'commander';
+import {createInstanceAndWaitForInitialization} from "./common/aws/ec2.js";
+import {ec2Client, jobInfoByType, pemFilePath} from "./common/aws/const.js";
 
 // Promisify exec to use with async/await
 const execPromise = util.promisify(exec);
 
 // Set up the EC2 client
-const ec2Client = new EC2Client({ region: 'us-east-2' });
 
-// AMI ID, key pair, security group, and instance name
-const amiId = 'ami-06556f127bcadfb6b';  // Your AMI ID
-const keyName = 'elastic-search-1-key';  // AWS key pair name
-const pemFilePath = './elastic-search-1-key.pem';  // Local path to the PEM file
-const securityGroupId = 'sg-0251aa679853915ba';  // Security Group ID for launch-wizard-1
-
-// ProfileUploader and JobCollector configurations
-const profileUploaderInfo = {
-    iamProfileName: 'JobCollector',
-    instancePrefix: 'ProfileUploaderInstance',
-    imageName: 'profile-uploader',
-};
-
-const jobCollectorInfo = {
-    iamProfileName: 'JobCollector',
-    instancePrefix: 'JobCollectorInstance',
-    imageName: 'job-collector',
-};
-
-// Job type mapping
-const jobInfoByType = {
-    'profile-updater': profileUploaderInfo,
-    'job-collector': jobCollectorInfo,
-};
-
-// Function to create an EC2 instance and wait for initialization
-const createInstanceAndWaitForInitialization = async (type) => {
-    const { iamProfileName, instancePrefix, imageName } = jobInfoByType[type];
-
-    try {
-        // Create instance using the AMI ID and Security Group ID
-        const runInstancesCommand = new RunInstancesCommand({
-            ImageId: amiId,
-            InstanceType: 't2.micro',  // Adjust the instance type as needed
-            KeyName: keyName,
-            MinCount: 1,
-            MaxCount: 1,
-            SecurityGroupIds: [securityGroupId],  // Assign the security group
-            IamInstanceProfile: { Name: iamProfileName },  // Attach the IAM role using the instance profile
-        });
-
-        const runResponse = await ec2Client.send(runInstancesCommand);
-        const instanceId = runResponse.Instances[0].InstanceId;
-
-        console.log(`Instance created with ID: ${instanceId}`);
-
-        // Add a name tag to the instance using first 5 characters of the instance ID
-        const instanceName = `${instancePrefix}-${instanceId.slice(3, 8)}`;
-        const createTagsCommand = new CreateTagsCommand({
-            Resources: [instanceId],
-            Tags: [{ Key: 'Name', Value: instanceName }],
-        });
-        await ec2Client.send(createTagsCommand);
-        console.log(`Assigned name "${instanceName}" to instance ${instanceId}`);
-
-        // Wait for instance status checks to pass (instance is fully initialized)
-        await waitUntilInstanceStatusOk({ client: ec2Client, maxWaitTime: 600 }, { InstanceIds: [instanceId] });
-        console.log("Instance has passed status checks and is fully initialized.");
-
-        // Get the instance's public IP address
-        const describeParams = { InstanceIds: [instanceId] };
-        const describeCommand = new DescribeInstancesCommand(describeParams);
-        const describeResponse = await ec2Client.send(describeCommand);
-        const publicIpAddress = describeResponse.Reservations[0].Instances[0].PublicIpAddress;
-
-        console.log(`Public IP address: ${publicIpAddress}`);
-
-        // Return the instance ID and IP
-        return { instanceId, publicIpAddress };
-
-    } catch (error) {
-        console.error("Error creating instance or retrieving IP:", error);
-        throw error;
-    }
-};
 
 // Function to copy .env file and deploy Docker container
 const copyEnvFileAndDeployDocker = async (type, publicIpAddress) => {
@@ -100,8 +26,9 @@ const copyEnvFileAndDeployDocker = async (type, publicIpAddress) => {
         const bashScript = `
         #!/bin/bash
         aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 015584085679.dkr.ecr.us-east-2.amazonaws.com
-        docker pull 015584085679.dkr.ecr.us-east-2.amazonaws.com/job-scraper-puppet/crawler:${imageName}
-        docker run -d --restart on-failure --name ${imageName} --env-file ~/.env 015584085679.dkr.ecr.us-east-2.amazonaws.com/job-scraper-puppet/crawler:${imageName}
+        docker pull 015584085679.dkr.ecr.us-east-2.amazonaws.com/${imageName}:latest
+        docker run -d --restart on-failure --name ${imageName} --env-file ~/.env 015584085679.dkr.ecr.us-east-2.amazonaws.com/${imageName}:latest
+        
       `;
 
         // SSH into the EC2 instance and run the Docker setup script
@@ -128,9 +55,13 @@ const createInstances = async (type, count) => {
     }
 
     const instances = await Promise.all(creationPromises);
+
+    // TODO - promise.all this for faster deploy
+    const environmentSetupPromises = [];
     for (const { publicIpAddress } of instances) {
-        await copyEnvFileAndDeployDocker(type, publicIpAddress);
+        environmentSetupPromises.push(copyEnvFileAndDeployDocker(type, publicIpAddress))
     }
+    await Promise.all(environmentSetupPromises);
 };
 
 // Function to terminate instances with a given prefix

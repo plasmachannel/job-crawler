@@ -33,11 +33,12 @@ export default async function companyCrawler (page, sendInQueue = true) {
     // Extract only fully formed URLs on the page
     let currentPage = 0;
     const pageLimit = 100000;
+    const batchLimit = 100;
     while (1 && currentPage < pageLimit) {
         currentPage++;
         const companyLinks = await getCompanyLinksOnPage(page);
 
-        const urlsToVisit = companyLinks.map((link, index) =>  `${baseUrl}${link}`);
+        const urlsToVisit = companyLinks.map((link, index) =>  ({url: `${baseUrl}${link}`}));
         allLinks = allLinks.concat(urlsToVisit);
 
         try {
@@ -48,6 +49,10 @@ export default async function companyCrawler (page, sendInQueue = true) {
         } catch (error) {
             console.error(error);
             break;
+        }
+        if (allLinks.length > batchLimit) {
+            await sendAllToCompanyQueue(allLinks);
+            allLinks = [];
         }
     }
 
